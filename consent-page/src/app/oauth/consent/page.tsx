@@ -24,25 +24,20 @@ function ConsentForm() {
     }
 
     // For "allow", redirect to Google OAuth via Supabase Auth
-    // Store the MCP OAuth params in localStorage (Supabase manages its own state param)
-    const mcpOAuthParams = {
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      state: state,
-      code_challenge: codeChallenge,
-      code_challenge_method: codeChallengeMethod,
-    };
-    localStorage.setItem("mcp_oauth_params", JSON.stringify(mcpOAuthParams));
+    // Encode MCP OAuth params in the redirect_to URL (localStorage doesn't persist across domains)
+    const callbackUrl = new URL(`${window.location.origin}/oauth/callback`);
+    callbackUrl.searchParams.set("mcp_client_id", clientId);
+    callbackUrl.searchParams.set("mcp_redirect_uri", redirectUri);
+    if (state) callbackUrl.searchParams.set("mcp_state", state);
+    if (codeChallenge) callbackUrl.searchParams.set("mcp_code_challenge", codeChallenge);
+    if (codeChallengeMethod) callbackUrl.searchParams.set("mcp_code_challenge_method", codeChallengeMethod);
 
     const authUrl = new URL(
       `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/authorize`
     );
     authUrl.searchParams.set("provider", "google");
-    // After Google auth, redirect back to our callback page
-    authUrl.searchParams.set(
-      "redirect_to",
-      `${window.location.origin}/oauth/callback`
-    );
+    // After Google auth, redirect back to our callback page with MCP params
+    authUrl.searchParams.set("redirect_to", callbackUrl.toString());
 
     window.location.href = authUrl.toString();
   };

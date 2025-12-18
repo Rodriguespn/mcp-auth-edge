@@ -10,32 +10,20 @@ function CallbackHandler() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Get the MCP OAuth params from localStorage
-        const storedParams = localStorage.getItem("mcp_oauth_params");
+        // Get MCP OAuth params from URL query string (passed via redirect_to)
+        const urlParams = new URLSearchParams(window.location.search);
 
-        if (!storedParams) {
-          throw new Error("Missing OAuth parameters. Please start the authorization flow again.");
-        }
-
-        // Parse the MCP OAuth params
-        let mcpParams;
-        try {
-          mcpParams = JSON.parse(storedParams);
-        } catch {
-          throw new Error("Invalid OAuth parameters");
-        }
-
-        // Clear the stored params
-        localStorage.removeItem("mcp_oauth_params");
-
-        const { client_id, redirect_uri, state, code_challenge, code_challenge_method } = mcpParams;
+        const client_id = urlParams.get("mcp_client_id") || "";
+        const redirect_uri = urlParams.get("mcp_redirect_uri") || "";
+        const state = urlParams.get("mcp_state") || "";
+        const code_challenge = urlParams.get("mcp_code_challenge") || "";
+        const code_challenge_method = urlParams.get("mcp_code_challenge_method") || "";
 
         if (!redirect_uri) {
-          throw new Error("Missing redirect_uri in state");
+          throw new Error("Missing redirect_uri. Please start the authorization flow again.");
         }
 
-        // Check if there's an error from Supabase Auth (check URL params)
-        const urlParams = new URLSearchParams(window.location.search);
+        // Check if there's an error from Supabase Auth
         const error = urlParams.get("error");
         const errorDescription = urlParams.get("error_description");
 
