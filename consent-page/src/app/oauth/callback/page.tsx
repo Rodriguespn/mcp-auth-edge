@@ -1,31 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 function CallbackHandler() {
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Get the state parameter which contains our MCP OAuth params
-        const stateParam = searchParams.get("state");
+        // Get the MCP OAuth params from localStorage
+        const storedParams = localStorage.getItem("mcp_oauth_params");
 
-        if (!stateParam) {
-          throw new Error("Missing state parameter");
+        if (!storedParams) {
+          throw new Error("Missing OAuth parameters. Please start the authorization flow again.");
         }
 
-        // Decode the MCP OAuth params from state
+        // Parse the MCP OAuth params
         let mcpParams;
         try {
-          mcpParams = JSON.parse(atob(stateParam));
+          mcpParams = JSON.parse(storedParams);
         } catch {
-          throw new Error("Invalid state parameter");
+          throw new Error("Invalid OAuth parameters");
         }
+
+        // Clear the stored params
+        localStorage.removeItem("mcp_oauth_params");
 
         const { client_id, redirect_uri, state, code_challenge, code_challenge_method } = mcpParams;
 
@@ -33,9 +34,10 @@ function CallbackHandler() {
           throw new Error("Missing redirect_uri in state");
         }
 
-        // Check if there's an error from Supabase Auth
-        const error = searchParams.get("error");
-        const errorDescription = searchParams.get("error_description");
+        // Check if there's an error from Supabase Auth (check URL params)
+        const urlParams = new URLSearchParams(window.location.search);
+        const error = urlParams.get("error");
+        const errorDescription = urlParams.get("error_description");
 
         if (error) {
           const errorUrl = new URL(redirect_uri);
@@ -93,7 +95,7 @@ function CallbackHandler() {
     };
 
     handleCallback();
-  }, [searchParams]);
+  }, []);
 
   if (status === "loading") {
     return (

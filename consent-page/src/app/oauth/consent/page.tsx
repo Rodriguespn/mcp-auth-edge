@@ -24,16 +24,15 @@ function ConsentForm() {
     }
 
     // For "allow", redirect to Google OAuth via Supabase Auth
-    // Store the MCP OAuth params in state so we can retrieve them after Google auth
-    const mcpOAuthState = btoa(
-      JSON.stringify({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        state: state,
-        code_challenge: codeChallenge,
-        code_challenge_method: codeChallengeMethod,
-      })
-    );
+    // Store the MCP OAuth params in localStorage (Supabase manages its own state param)
+    const mcpOAuthParams = {
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      state: state,
+      code_challenge: codeChallenge,
+      code_challenge_method: codeChallengeMethod,
+    };
+    localStorage.setItem("mcp_oauth_params", JSON.stringify(mcpOAuthParams));
 
     const authUrl = new URL(
       `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/authorize`
@@ -44,8 +43,6 @@ function ConsentForm() {
       "redirect_to",
       `${window.location.origin}/oauth/callback`
     );
-    // Pass MCP OAuth params encoded in state
-    authUrl.searchParams.set("state", mcpOAuthState);
 
     window.location.href = authUrl.toString();
   };
