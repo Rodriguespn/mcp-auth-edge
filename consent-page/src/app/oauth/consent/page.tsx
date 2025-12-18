@@ -1,92 +1,193 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+interface AuthorizationDetails {
+  client?: {
+    client_id?: string;
+    client_name?: string;
+    logo_uri?: string;
+  };
+  scopes?: string[];
+  redirect_uri?: string;
+}
 
 function ConsentForm() {
   const searchParams = useSearchParams();
+  const authorizationId = searchParams.get("authorization_id");
 
-  const clientId = searchParams.get("client_id") || "Unknown Client";
-  const redirectUri = searchParams.get("redirect_uri") || "";
-  const state = searchParams.get("state") || "";
-  const codeChallenge = searchParams.get("code_challenge") || "";
-  const codeChallengeMethod = searchParams.get("code_challenge_method") || "";
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [authDetails, setAuthDetails] = useState<AuthorizationDetails | null>(null);
+  const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (action: "allow" | "deny") => {
-    if (action === "deny") {
-      if (!redirectUri) {
-        alert("No redirect URI provided");
+  useEffect(() => {
+    async function init() {
+      if (!authorizationId) {
+        setError("Missing authorization_id parameter");
+        setLoading(false);
         return;
       }
-      // Redirect back with error
-      const errorUrl = new URL(redirectUri);
-      errorUrl.searchParams.set("error", "access_denied");
-      errorUrl.searchParams.set("error_description", "User denied the request");
-      if (state) errorUrl.searchParams.set("state", state);
-      window.location.href = errorUrl.toString();
-      return;
+
+      try {
+        // Check if user is logged in
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session) {
+          // User not logged in - redirect to Google OAuth, then back here
+          const currentUrl = window.location.href;
+          const { error } = await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+              redirectTo: currentUrl,
+            },
+          });
+          if (error) throw error;
+          return;
+        }
+
+        setUser({ email: session.user.email });
+
+        // Get authorization details from Supabase
+        const { data, error: authError } = await supabase.auth.oauth.getAuthorizationDetails(
+          authorizationId
+        );
+
+        if (authError) {
+          throw authError;
+        }
+
+        setAuthDetails(data as unknown as AuthorizationDetails);
+      } catch (err) {
+        console.error("Error initializing consent page:", err);
+        setError(err instanceof Error ? err.message : "Failed to load authorization details");
+      } finally {
+        setLoading(false);
+      }
     }
 
-    if (!redirectUri) {
-      alert("No redirect URI provided. Please start the authorization flow from an MCP client.");
-      return;
+    init();
+  }, [authorizationId]);
+
+  const handleAllow = async () => {
+    if (!authorizationId) return;
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.oauth.approveAuthorization(authorizationId);
+      if (error) throw error;
+      // Supabase will handle the redirect automatically
+    } catch (err) {
+      console.error("Error approving authorization:", err);
+      setError(err instanceof Error ? err.message : "Failed to approve authorization");
+      setSubmitting(false);
     }
-
-    // For "allow", redirect to Google OAuth via Supabase Auth
-    // Encode MCP OAuth params in the redirect_to URL (localStorage doesn't persist across domains)
-    const callbackUrl = new URL(`${window.location.origin}/oauth/callback`);
-    if (clientId) callbackUrl.searchParams.set("mcp_client_id", clientId);
-    if (redirectUri) callbackUrl.searchParams.set("mcp_redirect_uri", redirectUri);
-    if (state) callbackUrl.searchParams.set("mcp_state", state);
-    if (codeChallenge) callbackUrl.searchParams.set("mcp_code_challenge", codeChallenge);
-    if (codeChallengeMethod) callbackUrl.searchParams.set("mcp_code_challenge_method", codeChallengeMethod);
-
-    const authUrl = new URL(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/authorize`
-    );
-    authUrl.searchParams.set("provider", "google");
-    // After Google auth, redirect back to our callback page with MCP params
-    authUrl.searchParams.set("redirect_to", callbackUrl.toString());
-
-    window.location.href = authUrl.toString();
   };
+
+  const handleDeny = async () => {
+    if (!authorizationId) return;
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.oauth.denyAuthorization(authorizationId);
+      if (error) throw error;
+      // Supabase will handle the redirect automatically
+    } catch (err) {
+      console.error("Error denying authorization:", err);
+      setError(err instanceof Error ? err.message : "Failed to deny authorization");
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="bg-white rounded-xl shadow-lg p-10 max-w-md w-full text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading authorization details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="bg-white rounded-xl shadow-lg p-10 max-w-md w-full text-center">
+          <div className="text-red-500 text-4xl mb-4">!</div>
+          <h1 className="text-xl font-semibold text-gray-800 mb-2">Authorization Error</h1>
+          <p className="text-gray-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const clientName = authDetails?.client?.client_name || authDetails?.client?.client_id || "Unknown Application";
+  const scopes = authDetails?.scopes || [];
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-5">
       <div className="bg-white rounded-xl shadow-lg p-10 max-w-md w-full">
+        {user?.email && (
+          <p className="text-sm text-gray-500 mb-4">
+            Logged in as {user.email}
+          </p>
+        )}
+
         <h1 className="text-2xl font-semibold text-gray-800 mb-2">
           Authorize Application
         </h1>
-        <p className="text-gray-600 mb-6 break-all">{clientId}</p>
+        <p className="text-gray-600 mb-6 break-all">{clientName}</p>
 
         <div className="bg-gray-50 rounded-lg p-4 mb-6">
           <h2 className="text-sm text-gray-600 mb-3">
-            This application will be able to:
+            This application is requesting access to:
           </h2>
           <ul className="space-y-2">
-            <li className="flex items-center gap-2 text-gray-800">
-              <span className="text-green-500 font-bold">✓</span>
-              Access your account information
-            </li>
-            <li className="flex items-center gap-2 text-gray-800">
-              <span className="text-green-500 font-bold">✓</span>
-              Use MCP tools on your behalf
-            </li>
+            {scopes.length > 0 ? (
+              scopes.map((scope) => (
+                <li key={scope} className="flex items-center gap-2 text-gray-800">
+                  <span className="text-green-500 font-bold">*</span>
+                  {scope}
+                </li>
+              ))
+            ) : (
+              <>
+                <li className="flex items-center gap-2 text-gray-800">
+                  <span className="text-green-500 font-bold">*</span>
+                  Access your account information
+                </li>
+                <li className="flex items-center gap-2 text-gray-800">
+                  <span className="text-green-500 font-bold">*</span>
+                  Use MCP tools on your behalf
+                </li>
+              </>
+            )}
           </ul>
         </div>
 
         <div className="flex gap-3">
           <button
-            onClick={() => handleSubmit("deny")}
-            className="flex-1 py-3 px-6 rounded-lg border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+            onClick={handleDeny}
+            disabled={submitting}
+            className="flex-1 py-3 px-6 rounded-lg border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
-            Deny
+            {submitting ? "..." : "Deny"}
           </button>
           <button
-            onClick={() => handleSubmit("allow")}
-            className="flex-1 py-3 px-6 rounded-lg bg-green-500 text-white font-medium hover:bg-green-600 transition-colors"
+            onClick={handleAllow}
+            disabled={submitting}
+            className="flex-1 py-3 px-6 rounded-lg bg-green-500 text-white font-medium hover:bg-green-600 transition-colors disabled:opacity-50"
           >
-            Allow
+            {submitting ? "..." : "Allow"}
           </button>
         </div>
       </div>
