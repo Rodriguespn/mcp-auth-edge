@@ -74,6 +74,7 @@ app.get('/.well-known/oauth-protected-resource', (c) => {
   return c.json({
     resource: mcpResourceUrl,
     authorization_servers: [wellKnownAuthorizationServerUrl],
+    scopes_supported: ['openid', 'profile', 'email'],
   })
 })
 
