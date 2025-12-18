@@ -23,18 +23,29 @@ function ConsentForm() {
       return;
     }
 
-    // For "allow", redirect to Supabase auth with the OAuth params
-    // The actual authorization flow will be handled by Supabase
+    // For "allow", redirect to Google OAuth via Supabase Auth
+    // Store the MCP OAuth params in state so we can retrieve them after Google auth
+    const mcpOAuthState = btoa(
+      JSON.stringify({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        state: state,
+        code_challenge: codeChallenge,
+        code_challenge_method: codeChallengeMethod,
+      })
+    );
+
     const authUrl = new URL(
       `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/authorize`
     );
-    authUrl.searchParams.set("client_id", clientId);
-    authUrl.searchParams.set("redirect_uri", redirectUri);
-    authUrl.searchParams.set("response_type", "code");
-    if (state) authUrl.searchParams.set("state", state);
-    if (codeChallenge) authUrl.searchParams.set("code_challenge", codeChallenge);
-    if (codeChallengeMethod)
-      authUrl.searchParams.set("code_challenge_method", codeChallengeMethod);
+    authUrl.searchParams.set("provider", "google");
+    // After Google auth, redirect back to our callback page
+    authUrl.searchParams.set(
+      "redirect_to",
+      `${window.location.origin}/oauth/callback`
+    );
+    // Pass MCP OAuth params encoded in state
+    authUrl.searchParams.set("state", mcpOAuthState);
 
     window.location.href = authUrl.toString();
   };
