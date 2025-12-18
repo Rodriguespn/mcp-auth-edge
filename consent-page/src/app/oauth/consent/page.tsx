@@ -14,6 +14,10 @@ function ConsentForm() {
 
   const handleSubmit = (action: "allow" | "deny") => {
     if (action === "deny") {
+      if (!redirectUri) {
+        alert("No redirect URI provided");
+        return;
+      }
       // Redirect back with error
       const errorUrl = new URL(redirectUri);
       errorUrl.searchParams.set("error", "access_denied");
@@ -23,11 +27,16 @@ function ConsentForm() {
       return;
     }
 
+    if (!redirectUri) {
+      alert("No redirect URI provided. Please start the authorization flow from an MCP client.");
+      return;
+    }
+
     // For "allow", redirect to Google OAuth via Supabase Auth
     // Encode MCP OAuth params in the redirect_to URL (localStorage doesn't persist across domains)
     const callbackUrl = new URL(`${window.location.origin}/oauth/callback`);
-    callbackUrl.searchParams.set("mcp_client_id", clientId);
-    callbackUrl.searchParams.set("mcp_redirect_uri", redirectUri);
+    if (clientId) callbackUrl.searchParams.set("mcp_client_id", clientId);
+    if (redirectUri) callbackUrl.searchParams.set("mcp_redirect_uri", redirectUri);
     if (state) callbackUrl.searchParams.set("mcp_state", state);
     if (codeChallenge) callbackUrl.searchParams.set("mcp_code_challenge", codeChallenge);
     if (codeChallengeMethod) callbackUrl.searchParams.set("mcp_code_challenge_method", codeChallengeMethod);
