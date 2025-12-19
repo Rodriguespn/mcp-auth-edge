@@ -15,3 +15,5 @@ supabase/.temp/
 .env
 .env.local
 .env*.local
+
+.mcp.json

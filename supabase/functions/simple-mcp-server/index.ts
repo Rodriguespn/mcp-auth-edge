@@ -8,39 +8,29 @@ import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 // Configuration
-const functionName = 'simple-mcp-server'
-const rawSupabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
-// Determine the public-facing base URL for both local and production
-function getPublicBaseUrl(): string {
-  // Local development: kong:8000 -> localhost:54321
-  if (rawSupabaseUrl.includes('kong')) {
-    return 'http://localhost:54321'
-  }
-  // Production: extract project ref from internal URL and build public URL
-  // SUPABASE_URL in production is like: https://<project-ref>.supabase.co
-  return rawSupabaseUrl
-}
+// PUBLIC_URL: Where the project is hosted (e.g., https://example.com or http://localhost:54321/functions/v1/simple-mcp-server)
+// Falls back to SUPABASE_URL with default Edge Functions path
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+const publicUrl = Deno.env.get('PUBLIC_URL') || `${supabaseUrl}/functions/v1/simple-mcp-server`
 
-const supabaseUrl = getPublicBaseUrl()
+// AUTH_SERVER_URL: The authorization server URL (e.g., https://project.supabase.co/auth/v1 or https://auth.example.com)
+// Falls back to Supabase Auth on the same project if not set
+const authServerUrl = Deno.env.get('AUTH_SERVER_URL') || `${supabaseUrl}/auth/v1`
 
 /**
  * Helper function to construct URLs for OAuth metadata.
- * Uses supabaseUrl which is correctly resolved for both local dev and production.
  */
 function getUrls() {
-  const mcpResourceUrl = `${supabaseUrl}/functions/v1/${functionName}`
-  const wellKnownAuthorizationServerUrl = `${supabaseUrl}/auth/v1`
-
   return {
-    mcpResourceUrl,
-    wellKnownAuthorizationServerUrl,
+    mcpResourceUrl: publicUrl,
+    wellKnownAuthorizationServerUrl: authServerUrl,
   }
 }
 
 // Create Hono app (following Supabase tutorial structure)
-const app = new Hono().basePath(`/${functionName}`)
+const app = new Hono().basePath('/simple-mcp-server')
 
 // Create your MCP server
 const server = new McpServer({
@@ -69,7 +59,6 @@ server.registerTool(
  * metadata URL MCP clients actually fetch in practice.
  */
 app.get('/.well-known/oauth-protected-resource', (c) => {
-  console.log('Serving HEADER resource metadata')
   const { mcpResourceUrl, wellKnownAuthorizationServerUrl } = getUrls()
   return c.json({
     resource: mcpResourceUrl,
@@ -136,7 +125,7 @@ async function authMiddleware(c: Context, next: Next) {
     return c.json(
       { error: 'unauthorized', error_description: 'Missing authorization header' },
       401,
-      { 'WWW-Authenticate': buildWwwAuthenticateHeader() }
+      //{ 'WWW-Authenticate': buildWwwAuthenticateHeader() }
     )
   }
 
@@ -146,7 +135,7 @@ async function authMiddleware(c: Context, next: Next) {
     return c.json(
       { error: 'invalid_request', error_description: 'Invalid authorization header format' },
       401,
-      { 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_request', 'Bearer token required') }
+      //{ 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_request', 'Bearer token required') }
     )
   }
 
@@ -157,7 +146,7 @@ async function authMiddleware(c: Context, next: Next) {
     return c.json(
       { error: 'invalid_token', error_description: error || 'Token validation failed' },
       401,
-      { 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_token', error) }
+      //{ 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_token', error) }
     )
   }
 
