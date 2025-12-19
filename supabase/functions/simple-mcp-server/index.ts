@@ -125,7 +125,7 @@ async function authMiddleware(c: Context, next: Next) {
     return c.json(
       { error: 'unauthorized', error_description: 'Missing authorization header' },
       401,
-      //{ 'WWW-Authenticate': buildWwwAuthenticateHeader() }
+      { 'WWW-Authenticate': buildWwwAuthenticateHeader() }
     )
   }
 
@@ -135,7 +135,7 @@ async function authMiddleware(c: Context, next: Next) {
     return c.json(
       { error: 'invalid_request', error_description: 'Invalid authorization header format' },
       401,
-      //{ 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_request', 'Bearer token required') }
+      { 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_request', 'Bearer token required') }
     )
   }
 
@@ -146,7 +146,7 @@ async function authMiddleware(c: Context, next: Next) {
     return c.json(
       { error: 'invalid_token', error_description: error || 'Token validation failed' },
       401,
-      //{ 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_token', error) }
+      { 'WWW-Authenticate': buildWwwAuthenticateHeader('invalid_token', error) }
     )
   }
 
