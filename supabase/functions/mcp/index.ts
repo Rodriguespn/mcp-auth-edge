@@ -10,14 +10,21 @@ import { z } from 'zod'
 // Configuration
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
-// PUBLIC_URL: Where the project is hosted (e.g., https://example.com or http://localhost:54321/functions/v1/simple-mcp-server)
-// Falls back to SUPABASE_URL with default Edge Functions path
+// SUPABASE_URL is the base URL of the Supabase project
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-const publicUrl = Deno.env.get('PUBLIC_URL') || `${supabaseUrl}/functions/v1/simple-mcp-server`
 
-// AUTH_SERVER_URL: The authorization server URL (e.g., https://project.supabase.co/auth/v1 or https://auth.example.com)
-// Falls back to Supabase Auth on the same project if not set
-const authServerUrl = Deno.env.get('AUTH_SERVER_URL') || `${supabaseUrl}/auth/v1`
+// For local development (Docker uses kong:8000 internally), use localhost; for production, use SUPABASE_URL
+// The MCP function is served at /functions/v1/mcp
+const isLocal = supabaseUrl.includes('127.0.0.1') || supabaseUrl.includes('localhost') || supabaseUrl.includes('kong:8000')
+const publicUrl = isLocal
+  ? 'http://localhost:54321/functions/v1/mcp'
+  : `${supabaseUrl}/functions/v1/mcp`
+
+// AUTH_SERVER_URL: The authorization server URL
+// For local, use localhost; for production, use the Supabase Auth URL
+const authServerUrl = isLocal
+  ? 'http://localhost:54321/auth/v1'
+  : `${supabaseUrl}/auth/v1`
 
 /**
  * Helper function to construct URLs for OAuth metadata.
@@ -30,11 +37,11 @@ function getUrls() {
 }
 
 // Create Hono app (following Supabase tutorial structure)
-const app = new Hono().basePath('/simple-mcp-server')
+const app = new Hono().basePath('/mcp')
 
 // Create your MCP server
 const server = new McpServer({
-  name: 'simple-mcp-server',
+  name: 'mcp-server',
   version: '1.0.0',
 })
 
@@ -52,11 +59,8 @@ server.registerTool(
 )
 
 /**
- * Second OAuth Protected Resource Metadata endpoint, ONLY referenced from the
- * WWW-Authenticate header's resource_metadata parameter.
- *
- * This advertises a different authorization server so you can see which
- * metadata URL MCP clients actually fetch in practice.
+ * OAuth Protected Resource Metadata endpoint
+ * This advertises the authorization server so MCP clients can discover it
  */
 app.get('/.well-known/oauth-protected-resource', (c) => {
   const { mcpResourceUrl, wellKnownAuthorizationServerUrl } = getUrls()
@@ -70,14 +74,8 @@ app.get('/.well-known/oauth-protected-resource', (c) => {
 /**
  * Build WWW-Authenticate header for 401/403 responses
  * Per RFC 9728 OAuth 2.1 Protected Resource Metadata specification
- *
- * IMPORTANT: This uses a DIFFERENT resource_metadata URL from the standard
- * well-known endpoint above so you can observe which one clients follow.
  */
 function buildWwwAuthenticateHeader(error?: string, errorDescription?: string): string {
-  // Clients that follow the spec will fetch THIS URL first, because it was
-  // explicitly given in the 401 response. Misbehaving clients may ignore it
-  // and instead construct the /.well-known/oauth-protected-resource URL.
   const { mcpResourceUrl } = getUrls()
   const resourceMetadataUrl = `${mcpResourceUrl}/.well-known/oauth-protected-resource`
 
@@ -159,23 +157,23 @@ async function authMiddleware(c: Context, next: Next) {
 // Health check endpoint (no auth required)
 app.get('/', (c) => {
   return c.json({
-    name: 'simple-mcp-server',
+    name: 'mcp-server',
     version: '1.0.0',
     endpoints: {
-      mcp: '/mcp',
+      mcp: '/',
       oauthMetadata: '/.well-known/oauth-protected-resource',
     },
   })
 })
 
-// Apply auth middleware to the MCP endpoint
-app.use('/mcp', authMiddleware)
+// Apply auth middleware to POST requests (MCP protocol uses POST)
+app.use('/', authMiddleware)
 
 /**
  * MCP protocol endpoint - requires authentication
- * Handle MCP requests at /mcp path
+ * Handle MCP requests at root path
  */
-app.all('/mcp', async (c) => {
+app.post('/', async (c) => {
   const transport = new WebStandardStreamableHTTPServerTransport()
   await server.connect(transport)
   return transport.handleRequest(c.req.raw)
